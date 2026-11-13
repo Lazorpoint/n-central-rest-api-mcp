@@ -6,39 +6,50 @@ import { createCapabilityResult, toMcpResult } from '../../../src/tool-registry.
 import { assertRedacted, assertSerializedSize, assertStructuredResult } from './result-assertions.js';
 
 describe('curated MCP structured results', () => {
-  it('returns structuredContent plus a compact non-duplicating text summary', () => {
+  it('returns structuredContent plus text that leads with a summary and carries the data', () => {
     const result = toMcpResult(coreTools[0], createCapabilityResult({ healthy: true }, ['GET /api/health']));
     assertStructuredResult(result);
     assert.deepEqual(result.structuredContent.data, { healthy: true });
-    assert.match(result.content[0].text, /healthy/);
-    assert.notEqual(result.content[0].text, JSON.stringify(result.structuredContent.data, null, 2));
-    assert.ok(Buffer.byteLength(result.content[0].text) < 100);
+    assert.equal(result.content[0].text, 'Returned an object with fields: healthy.\n\n{"healthy":true}');
   });
 
-  it('summarizes arrays, paged data, text, partial results, and truncation without copying values', () => {
-    const array = toMcpResult(coreTools[5], createCapabilityResult([
-      { id: 1, secretValue: 'must-not-appear-in-text' }, { id: 2 },
+  it('puts device ids in the text, because claude.ai shows the model only the text', () => {
+    const result = toMcpResult(coreTools[5], createCapabilityResult([
+      { deviceId: 1189203344, longName: 'SRV-DC01' },
+      { deviceId: 1189203345, longName: 'SRV-SQL01' },
     ], ['GET /api/devices']));
-    assert.equal(array.content[0].text, 'Returned 2 records.');
-    assert.equal(array.content[0].text.includes('must-not-appear-in-text'), false);
+    const text = result.content[0].text;
+    assert.ok(text.startsWith('Returned 2 records.\n\n'));
+    assert.deepEqual(JSON.parse(text.split('\n\n')[1]), result.structuredContent.data);
+    assert.match(text, /1189203344/);
+    assert.match(text, /1189203345/);
+  });
+
+  it('leads with a summary of arrays, paged data, text, partial results, and truncation', () => {
+    const firstLine = (/** @type {any} */ r) => r.content[0].text.split('\n\n')[0];
+    const array = toMcpResult(coreTools[5], createCapabilityResult([{ id: 1 }, { id: 2 }], ['GET /api/devices']));
+    assert.equal(firstLine(array), 'Returned 2 records.');
 
     const paged = toMcpResult(coreTools[5], createCapabilityResult({ data: [{ id: 1 }] }, ['GET /api/devices']));
-    assert.equal(paged.content[0].text, 'Returned 1 record in a paged result.');
+    assert.equal(firstLine(paged), 'Returned 1 record in a paged result.');
 
     const nextPage = toMcpResult(coreTools[7], createCapabilityResult(
       [{ id: 1 }], ['GET /api/issues'], [],
       { page: { pageNumber: 2, totalPages: 4, hasNextPage: true } },
     ));
-    assert.equal(nextPage.content[0].text, 'Returned 1 record. Page 2 of 4. Request pageNumber=3 for more.');
+    assert.equal(firstLine(nextPage), 'Returned 1 record. Page 2 of 4. Request pageNumber=3 for more.');
 
-    const text = toMcpResult(coreTools[10], createCapabilityResult('secret,csv\nvalue,1', ['GET /api/device-filters']));
-    assert.match(text.content[0].text, /^Returned a text result \(\d+ bytes\)\.$/);
-    assert.equal(text.content[0].text.includes('secret'), false);
+    const text = toMcpResult(coreTools[10], createCapabilityResult('name,id\nSRV-SQL01,1', ['GET /api/device-filters']));
+    assert.match(text.content[0].text, /^Returned a text result \(\d+ bytes\)\.\n\nname,id\nSRV-SQL01,1$/);
 
     const partial = toMcpResult(coreTools[0], createCapabilityResult({}, ['GET /api/health'], [
       { component: 'extra', message: 'failed' },
     ], { truncated: true }));
-    assert.match(partial.content[0].text, /1 component error\(s\).*truncated/);
+    assert.match(firstLine(partial), /1 component error\(s\).*truncated/);
+    assert.match(partial.content[0].text, /Errors: .*"component":"extra"/);
+
+    const empty = toMcpResult(coreTools[0], createCapabilityResult(null, ['GET /api/health']));
+    assert.equal(empty.content[0].text, 'Returned no data.');
   });
 
   it('truncates oversized arrays to 256 KiB and marks metadata', () => {

@@ -293,6 +293,16 @@ export async function startHttpRuntime(options) {
           const server = createServer();
           await server.connect(transport);
           await runWithContext(context, () => transport.handleRequest(req, res, body));
+        } else if (sessionId) {
+          // Local patch (Lazorpoint, re-derived for v3 2026-10-22): an unknown or
+          // expired session must be 404 per the MCP Streamable HTTP spec, so clients
+          // re-initialize instead of failing forever. Upstream returns 400 here,
+          // which strands claude.ai connectors after every restart.
+          sendJson(res, 404, {
+            jsonrpc: '2.0',
+            error: { code: -32001, message: 'Session not found' },
+            id: null,
+          });
         } else {
           sendJson(res, 400, {
             jsonrpc: '2.0',

@@ -72,7 +72,7 @@ describe('focused server runtime modules', () => {
         name: 'synthetic_read', arguments: { value: 'ok' },
       });
       assert.deepEqual(successful.structuredContent.data, { value: 'ok' });
-      assert.equal(successful.content[0].text.includes('ok'), false);
+      assert.equal(successful.content[0].text.includes('"value":"ok"'), true);
 
       const failed = await client.callTool({
         name: 'synthetic_write', arguments: { value: 'fail' },

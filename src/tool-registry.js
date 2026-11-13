@@ -126,9 +126,26 @@ export function toMcpResult(tool, result) {
     { page: result?.meta?.page, truncated: result?.meta?.truncated },
   ));
   return {
-    content: [{ type: /** @type {const} */ ('text'), text: summarizeMcpResult(structuredContent) }],
+    content: [{ type: /** @type {const} */ ('text'), text: renderMcpResultText(structuredContent) }],
     structuredContent,
   };
+}
+
+/**
+ * The summary followed by the data itself. Upstream sends the summary alone,
+ * which assumes the client shows the model structuredContent. claude.ai shows
+ * it only the text, so a summary-only result tells the model how many devices
+ * matched but not which ones. Compact JSON keeps the text no larger than the
+ * structured result that fitResultToLimit has already capped.
+ * @param {{data: unknown, meta: Record<string, any>}} result
+ */
+export function renderMcpResultText(result) {
+  const parts = [summarizeMcpResult(result)];
+  const { data, meta } = result;
+  if (typeof data === 'string') parts.push(data);
+  else if (data != null) parts.push(JSON.stringify(data));
+  if (meta.errors?.length) parts.push(`Errors: ${JSON.stringify(meta.errors)}`);
+  return parts.join('\n\n');
 }
 
 /** @param {Record<string, any>} tool @param {Record<string, unknown>} args */
