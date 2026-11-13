@@ -444,7 +444,7 @@ describe('real curated registry parity', () => {
       });
       assert.equal(deleted.status, 200);
       const afterDelete = await mcpPost(port, sessionHeaders, { jsonrpc: '2.0', id: 73, method: 'tools/list', params: {} });
-      assert.equal(afterDelete.status, 400);
+      assert.equal(afterDelete.status, 404); // Lazorpoint patch: unknown session is 404 per spec
       const health = await (await fetch(`http://127.0.0.1:${port}/healthz`)).json();
       assert.equal(health.sessions, 0);
 
